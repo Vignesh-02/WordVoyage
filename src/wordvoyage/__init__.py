@@ -1,0 +1,2 @@
+"""WordVoyage bot package."""
+
