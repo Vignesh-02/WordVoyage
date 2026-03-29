@@ -24,20 +24,6 @@ class ThemeSpec:
 
 
 THEMES = {
-    "orbital": ThemeSpec(
-        name="orbital",
-        top=(14, 36, 64),
-        mid=(27, 72, 119),
-        bottom=(183, 111, 36),
-        glow=(255, 203, 128, 125),
-        panel_fill=(7, 24, 45, 212),
-        panel_border=(233, 188, 115, 210),
-        pill_fill=(255, 235, 203, 255),
-        pill_text="#22405E",
-        heading_text="#FFE9C9",
-        body_text="#F8FBFF",
-        muted_text="#F0DAB6",
-    ),
     "sunset": ThemeSpec(
         name="sunset",
         top=(52, 33, 81),
@@ -52,30 +38,12 @@ THEMES = {
         body_text="#FFF8F2",
         muted_text="#FFD9B7",
     ),
-    "minimal": ThemeSpec(
-        name="minimal",
-        top=(16, 36, 54),
-        mid=(24, 66, 88),
-        bottom=(90, 127, 151),
-        glow=(184, 220, 238, 80),
-        panel_fill=(8, 24, 37, 214),
-        panel_border=(174, 212, 232, 205),
-        pill_fill=(224, 241, 251, 255),
-        pill_text="#14344B",
-        heading_text="#DDF2FF",
-        body_text="#F4FBFF",
-        muted_text="#CDE3F1",
-    ),
 }
 
 
 def resolve_theme_name(target_date: date, theme_override: str | None) -> str:
-    if theme_override and theme_override.lower() != "auto":
-        requested = theme_override.lower().strip()
-        if requested in THEMES:
-            return requested
-    names = sorted(THEMES.keys())
-    return names[target_date.toordinal() % len(names)]
+    _ = (target_date, theme_override)
+    return "sunset"
 
 
 def _font(size: int, *, bold: bool, unicode_safe: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -271,12 +239,15 @@ def render_card_image(
     draw.text((margin_x, top_y), "WordVoyage", fill="#F8FBFF", font=brand_font, stroke_width=1, stroke_fill="#0D2137")
     top_y += 78
 
-    # Title priority: use canonical word first, transliteration only as fallback.
-    language = str(payload.get("language", "")).strip().casefold()
+    # Title: show canonical word and include original script when available.
     translit = str(payload.get("transliteration", "")).strip()
     raw_word = str(payload.get("word", "")).strip()
-    _ = language
-    word_line = raw_word if raw_word else translit
+    script = str(payload.get("script", "")).strip()
+    base_word = raw_word if raw_word else translit
+    if script and script.casefold() != base_word.casefold():
+        word_line = f"{base_word} · {script}"
+    else:
+        word_line = base_word
     word_font = _fit_font_for_text(
         draw,
         word_line,
@@ -294,19 +265,10 @@ def render_card_image(
     pill_w = int(draw.textlength(pill_text, font=meta_font) + pill_pad_x * 2)
     pill_w = min(pill_w, width - 2 * margin_x)
 
-    # Prefer adjacent only when title is short enough; otherwise force below for readability.
-    pill_x = margin_x + int(word_w) + 18
-    pill_y = word_box[1] + max(0, (word_h - pill_h) // 2) + 2
-    has_adjacent_room = pill_x + pill_w <= width - margin_x
-    title_too_wide = word_w > (width - 2 * margin_x) * 0.56
-    title_too_tall = word_h > 86
-    if (not has_adjacent_room) or title_too_wide or title_too_tall:
-        pill_x = margin_x
-        # Use rendered title bottom to prevent overlap with tall glyphs/stroke.
-        pill_y = word_box[3] + 14
-    else:
-        # Even in adjacent mode, never allow vertical overlap with title.
-        pill_y = max(pill_y, word_box[3] + 8)
+    # Keep pill placement stable for feed readability:
+    # always left-aligned and directly below the title.
+    pill_x = margin_x
+    pill_y = word_box[3] + 14
 
     draw.rounded_rectangle(
         (pill_x, pill_y, pill_x + pill_w, pill_y + pill_h),

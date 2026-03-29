@@ -4,6 +4,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from PIL import Image
+
 HASHTAG_RE = re.compile(r"(?<!\w)#([A-Za-z][A-Za-z0-9_]*)")
 
 
@@ -73,13 +75,17 @@ def post_with_image(
     reply_to_cid: str | None = None,
 ) -> dict:
     """Create a Bluesky post with an image and optional reply threading."""
-    image_bytes = Path(image_path).read_bytes()
+    image_file = Path(image_path)
+    image_bytes = image_file.read_bytes()
     client = _client_login(handle=handle, app_password=app_password)
 
     upload = client.upload_blob(image_bytes)
     blob = upload.get("blob") if isinstance(upload, dict) else getattr(upload, "blob", None)
     if not blob:
         raise RuntimeError("Failed to upload image blob to Bluesky.")
+
+    with Image.open(image_file) as img:
+        img_w, img_h = img.size
 
     record: dict = {
         "$type": "app.bsky.feed.post",
@@ -91,6 +97,7 @@ def post_with_image(
                 {
                     "alt": alt_text,
                     "image": blob,
+                    "aspectRatio": {"width": int(img_w), "height": int(img_h)},
                 }
             ],
         },

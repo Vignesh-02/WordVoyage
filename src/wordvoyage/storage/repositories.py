@@ -39,8 +39,26 @@ def claim_word_if_new(database_url: str, payload: dict[str, Any]) -> bool:
     """
     if not database_url:
         return True
+    word = str(payload.get("word", "")).strip()
+    language = str(payload.get("language", "")).strip()
+    if not word or not language:
+        return False
     with connect(database_url) as conn:
         with conn.cursor() as cur:
+            # Global case-insensitive guard: avoid repeats like "Komorebi" vs "komorebi"
+            # regardless of language label variations.
+            cur.execute(
+                """
+                SELECT 1
+                FROM words
+                WHERE lower(word) = lower(%s)
+                LIMIT 1
+                """,
+                (word,),
+            )
+            if cur.fetchone() is not None:
+                return False
+
             cur.execute(
                 """
                 INSERT INTO words (
@@ -61,8 +79,8 @@ def claim_word_if_new(database_url: str, payload: dict[str, Any]) -> bool:
                 RETURNING id
                 """,
                 (
-                    payload["word"],
-                    payload["language"],
+                    word,
+                    language,
                     payload.get("script") or None,
                     payload.get("transliteration") or None,
                     payload.get("pronunciation") or None,

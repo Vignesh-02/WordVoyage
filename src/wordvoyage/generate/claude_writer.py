@@ -145,6 +145,26 @@ def _ensure_english_usage_with_word(data: dict) -> None:
         data["usage_example_english_with_word"] = "I felt this word's meaning in real life today."
 
 
+def _build_safe_alt_text(data: dict) -> str:
+    word = str(data.get("word", "")).strip()
+    language = str(data.get("language", "")).strip()
+    script = str(data.get("script", "")).strip()
+    meaning = str(data.get("meaning", "")).strip()
+    native = str(data.get("usage_example_native", "")).strip()
+    translation = str(data.get("usage_example_translation", "")).strip()
+    usage = str(data.get("usage_example_english_with_word", "")).strip()
+    script_part = f" ({script})" if script else ""
+    text = (
+        f"WordVoyage card for {word}{script_part} in {language}. "
+        f"Meaning: {meaning} "
+        f"Native example: {native} "
+        f"English translation: {translation} "
+        f"English usage: {usage}"
+    )
+    text = " ".join(text.split())
+    return text[:497] + "..." if len(text) > 500 else text
+
+
 def _claude_generate(
     api_key: str,
     model: str,
@@ -219,7 +239,6 @@ JSON schema:
             "usage_example_translation",
             "usage_example_english_with_word",
             "caption",
-            "alt_text",
         ]
         if any(not str(data.get(k, "")).strip() for k in required):
             return None, "Claude JSON missing required fields."
@@ -233,6 +252,8 @@ JSON schema:
         ety_error = _validate_etymology_quality(data)
         if ety_error:
             return None, ety_error
+        # Always use deterministic alt text based on actual payload fields.
+        data["alt_text"] = _build_safe_alt_text(data)
         data["source"] = f"claude:{model}"
         return data, ""
     except Exception as exc:

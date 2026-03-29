@@ -31,3 +31,6 @@ env/
 # Runtime artifacts/logs
 artifacts/
 *.log
+
+
+docs/project_runbook_and_interview_qa.md

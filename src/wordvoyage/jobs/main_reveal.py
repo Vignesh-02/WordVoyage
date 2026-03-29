@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 
 from wordvoyage.content.post_copy import build_main_caption
 from wordvoyage.config import Settings
@@ -12,6 +13,28 @@ from wordvoyage.storage.repositories import claim_word_if_new, load_used_word_te
 from wordvoyage.storage.thread_state import PostRef, set_post_ref, set_slot_context, synthetic_ref
 
 
+def _norm_word(value: str) -> str:
+    return " ".join(str(value).split()).strip().casefold()
+
+
+def _load_used_words_from_artifacts(output_dir: Path) -> list[str]:
+    """
+    Best-effort history fallback from local artifacts so uniqueness remains strong
+    even if DB branch was reset or changed.
+    """
+    used: list[str] = []
+    pattern = output_dir.glob("*/main_reveal/intended_post_main_reveal.json")
+    for path in pattern:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            word = str(data.get("word", "")).strip()
+            if word:
+                used.append(word)
+        except Exception:
+            continue
+    return used
+
+
 def run_main_reveal_job(settings: Settings, now_utc: datetime) -> None:
     """Main daily word generation + image + post flow."""
     local_now = now_utc.astimezone(settings.timezone)
@@ -20,10 +43,13 @@ def run_main_reveal_job(settings: Settings, now_utc: datetime) -> None:
     run_dir = day_root / "main_reveal"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    used_words = load_used_word_terms(settings.database_url, limit=1200)
+    used_words_db = load_used_word_terms(settings.database_url, limit=5000)
+    used_words_artifacts = _load_used_words_from_artifacts(settings.output_dir)
+    used_words = list(dict.fromkeys([*used_words_db, *used_words_artifacts]))
+    used_words_norm = {_norm_word(w) for w in used_words if _norm_word(w)}
     payload = None
     claim_done = False
-    max_claim_attempts = 6
+    max_claim_attempts = 20
     for attempt in range(1, max_claim_attempts + 1):
         candidate = generate_word_payload(
             target_date=target_date,
@@ -32,11 +58,18 @@ def run_main_reveal_job(settings: Settings, now_utc: datetime) -> None:
             allow_fallback=settings.allow_curated_fallback,
             excluded_words=used_words,
         )
+        candidate_norm = _norm_word(candidate.get("word", ""))
+        if candidate_norm and candidate_norm in used_words_norm:
+            used_words.append(candidate["word"])
+            used_words_norm.add(candidate_norm)
+            print(f"Duplicate word detected from history, regenerating (attempt {attempt}/{max_claim_attempts}).")
+            continue
         # In live-post mode with DB configured, claim uniqueness before proceeding.
         if settings.posting_enabled and settings.database_url:
             inserted = claim_word_if_new(settings.database_url, candidate)
             if not inserted:
                 used_words.append(candidate["word"])
+                used_words_norm.add(candidate_norm)
                 print(f"Duplicate word detected in DB, regenerating (attempt {attempt}/{max_claim_attempts}).")
                 continue
             claim_done = True
