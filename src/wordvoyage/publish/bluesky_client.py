@@ -7,6 +7,30 @@ from pathlib import Path
 from PIL import Image
 
 HASHTAG_RE = re.compile(r"(?<!\w)#([A-Za-z][A-Za-z0-9_]*)")
+MAX_BSKY_GRAPHEME_SAFE = 300
+
+
+def _enforce_text_limit(text: str, max_len: int = MAX_BSKY_GRAPHEME_SAFE) -> str:
+    """
+    Final safety net before publish.
+    Python len() counts Unicode code points, so len(text) <= 300 guarantees
+    grapheme count is not above 300.
+    """
+    if len(text) <= max_len:
+        return text
+
+    # Preserve hashtag tail when possible.
+    tag_start = text.rfind("\n\n#")
+    if tag_start > 0:
+        body = text[:tag_start].rstrip()
+        tags = text[tag_start:]
+        body_limit = max_len - len(tags)
+        if body_limit > 8:
+            if len(body) > body_limit:
+                body = body[: max(1, body_limit - 3)].rstrip() + "..."
+            return f"{body}{tags}"
+
+    return text[: max(1, max_len - 3)].rstrip() + "..."
 
 
 def _build_hashtag_facets(text: str) -> list[dict]:
@@ -75,6 +99,7 @@ def post_with_image(
     reply_to_cid: str | None = None,
 ) -> dict:
     """Create a Bluesky post with an image and optional reply threading."""
+    caption = _enforce_text_limit(caption)
     image_file = Path(image_path)
     image_bytes = image_file.read_bytes()
     client = _client_login(handle=handle, app_password=app_password)
@@ -121,6 +146,7 @@ def post_text(
     reply_to_cid: str | None = None,
 ) -> dict:
     """Create a text-only Bluesky post with optional reply threading."""
+    caption = _enforce_text_limit(caption)
     client = _client_login(handle=handle, app_password=app_password)
     record: dict = {
         "$type": "app.bsky.feed.post",

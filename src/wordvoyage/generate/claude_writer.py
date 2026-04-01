@@ -134,6 +134,30 @@ def _validate_etymology_quality(data: dict) -> str | None:
     return None
 
 
+def _contains_ipa(text: str) -> bool:
+    if "/" in text or "[" in text or "]" in text:
+        return True
+    # Common IPA Unicode blocks.
+    for ch in text:
+        cp = ord(ch)
+        if 0x0250 <= cp <= 0x02AF:  # IPA Extensions
+            return True
+        if 0x1D00 <= cp <= 0x1D7F:  # Phonetic Extensions
+            return True
+        if 0x1D80 <= cp <= 0x1DBF:  # Phonetic Extensions Supplement
+            return True
+    return False
+
+
+def _validate_pronunciation_quality(data: dict) -> str | None:
+    pronunciation = str(data.get("pronunciation", "")).strip()
+    if not pronunciation:
+        return "Pronunciation is empty."
+    if _contains_ipa(pronunciation):
+        return "Pronunciation must be plain-English phonetic, not IPA."
+    return None
+
+
 def _ensure_english_usage_with_word(data: dict) -> None:
     if str(data.get("usage_example_english_with_word", "")).strip():
         return
@@ -188,6 +212,7 @@ Date: {target_date.isoformat()}
 Priority languages: Spanish, Japanese, Brazilian Portuguese, French, Korean, Italian, German, English with foreign origins.
 Choose a beautiful, culturally rich, or hard-to-translate word.
 Use factual, concise etymology. Avoid speculation. If uncertain, choose a different word.
+Pronunciation must be plain English phonetics (example: soh-breh-MEH-sah). Do NOT use IPA symbols, slashes, or brackets.
 Do not pick a word from the excluded list.
 
 JSON schema:
@@ -252,6 +277,9 @@ JSON schema:
         ety_error = _validate_etymology_quality(data)
         if ety_error:
             return None, ety_error
+        pron_error = _validate_pronunciation_quality(data)
+        if pron_error:
+            return None, pron_error
         # Always use deterministic alt text based on actual payload fields.
         data["alt_text"] = _build_safe_alt_text(data)
         data["source"] = f"claude:{model}"

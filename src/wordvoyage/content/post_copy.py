@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-BASE_TAGS = ["#WordVoyage"]
+BASE_TAGS = ["#LangSky", "#WordVoyage"]
 MAX_BSKY_TEXT = 295
 
 LANGUAGE_TAGS = {
@@ -22,13 +22,12 @@ def _language_tag(language: str) -> str:
 
 
 def hashtags_for(language: str) -> str:
-    _ = language
-    return " ".join(BASE_TAGS)
+    tags = [BASE_TAGS[0], _language_tag(language), BASE_TAGS[1]]
+    return " ".join(dict.fromkeys(tags))
 
 
 def main_hashtags_for(language: str) -> str:
-    # Keep main caption compact so etymology + native/english lines don't get truncated.
-    return " ".join(["#WordVoyage", _language_tag(language)])
+    return hashtags_for(language)
 
 
 def _fit_caption(body: str, tags: str, max_len: int = MAX_BSKY_TEXT) -> str:
@@ -53,11 +52,22 @@ def _clip(text: str, max_len: int) -> str:
     return cleaned[: max(1, max_len - 3)].rstrip() + "..."
 
 
+def _short_meaning_no_ellipsis(text: str, max_len: int = 96) -> str:
+    cleaned = " ".join(str(text).split()).strip()
+    if not cleaned:
+        return ""
+    first_sentence = cleaned.split(".")[0].strip()
+    candidate = first_sentence if first_sentence else cleaned
+    if len(candidate) <= max_len:
+        return candidate
+    return candidate[:max_len].rstrip(" ,;:-")
+
+
 def build_main_caption(payload: dict) -> str:
     word = payload["word"]
     language = payload["language"]
     transliteration = payload.get("transliteration", "").strip()
-    meaning = _clip(payload.get("meaning", ""), 120)
+    meaning = _short_meaning_no_ellipsis(payload.get("meaning", ""), 96)
 
     translit_line = ""
     if language.strip().casefold() != "english" and transliteration:
@@ -80,11 +90,11 @@ def build_deep_dive_caption(payload: dict) -> str:
     english = _clip(payload["usage_example_translation"], 85)
     english_usage = _clip(payload.get("usage_example_english_with_word") or f"I felt {word} today.", 95)
     body = (
-        f"Quick deep-dive on {word}.\n\n"
+        f"You know that feeling? In {language}, it’s {word}.\n\n"
         f"Native ({language}): {native}\n"
         f"English: {english}\n\n"
         f"English usage: {english_usage}\n"
-        "When did you last feel this?"
+        "How would you use it today?"
     )
     return _fit_caption(body, hashtags_for(language))
 
@@ -94,15 +104,14 @@ def build_quiz_caption(payload: dict, has_deep_dive: bool) -> str:
     language = payload["language"]
     english_usage = payload.get("usage_example_english_with_word") or f"I felt {word} today."
     intro = (
-        f"Ready for a {word} challenge?"
+        f"Quick challenge on {word}."
         if has_deep_dive
-        else f"Quick challenge: {word}"
+        else f"New word challenge: {word}."
     )
     body = (
         f"{intro}\n\n"
         f"Example in English: {english_usage}\n\n"
         f"Reply with 1 sentence in {language} + 1 in English.\n"
-        "First strong reply gets a shoutout next post.\n"
-        "Have you used this word before?"
+        "Best one gets a shoutout next post."
     )
     return _fit_caption(body, hashtags_for(language))
